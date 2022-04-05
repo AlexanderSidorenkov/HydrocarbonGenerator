@@ -7,6 +7,23 @@ seed(2020)
 Print_genlog = True
 
 Particles = ['CH4','CH3','CH2','CH1','CH0']
+						
+Directions = np.array([	[	[ 0, 0, 0, 4], [-1,-1, 0, 5], [-1, 0,-1, 6], [ 0,-1,-1, 7]	],
+						[	[ 0, 0, 0, 4], [ 0, 0, 0, 5], [ 0, 0,-1, 6], [ 0, 0,-1, 7]	],
+						[	[ 0, 0, 0, 4], [ 0,-1, 0, 5], [ 0, 0, 0, 6], [ 0,-1, 0, 7]	],
+						[	[ 0, 0, 0, 4], [-1, 0, 0, 5], [-1, 0, 0, 6], [ 0, 0, 0, 7]	],
+						[	[ 0, 0, 0, 0], [ 0, 0, 0, 1], [ 0, 0, 0, 2], [ 0, 0, 0, 3]	],
+						[	[ 1, 1, 0, 0], [ 0, 0, 0, 1], [ 0, 1, 0, 2], [ 1, 0, 0, 3]	],
+						[	[ 1, 0, 1, 0], [ 0, 0, 1, 1], [ 0, 0, 0, 2], [ 1, 0, 0, 3]	],
+						[	[ 0, 1, 1, 0], [ 0, 0, 1, 1], [ 0, 1, 0, 2], [ 0, 0, 0, 3]	]	])
+
+Type_shifts = [	[0.00, 0.00, 0.00],[0.50, 0.50, 0.00],[0.50, 0.00, 0.50],[0.00, 0.50, 0.50],
+				[0.25, 0.25, 0.25],[0.75, 0.75, 0.25],[0.75, 0.25, 0.75],[0.25, 0.75, 0.75]	]
+
+Cell_size = 0.357
+
+Plane = np.array([1,-1,-1])
+Plane = Plane/np.sqrt(np.sum(Plane**2))
 
 def vec_to_str(v):
 	s = ''
@@ -19,15 +36,7 @@ def find_key(arr):
 	pos = arr[1]
 	return vec_to_str(np.append(pos,type))
 
-def try_to_add_bond(atoms,ak,j):
-	directions = np.array([	[	[ 0, 0, 0, 4], [-1,-1, 0, 5], [-1, 0,-1, 6], [ 0,-1,-1, 7]	],
-							[	[ 0, 0, 0, 4], [ 0, 0, 0, 5], [ 0, 0,-1, 6], [ 0, 0,-1, 7]	],
-							[	[ 0, 0, 0, 4], [ 0,-1, 0, 5], [ 0, 0, 0, 6], [ 0,-1, 0, 7]	],
-							[	[ 0, 0, 0, 4], [-1, 0, 0, 5], [-1, 0, 0, 6], [ 0, 0, 0, 7]	],
-							[	[ 0, 0, 0, 0], [ 0, 0, 0, 1], [ 0, 0, 0, 2], [ 0, 0, 0, 3]	],
-							[	[ 1, 1, 0, 0], [ 0, 0, 0, 1], [ 0, 1, 0, 2], [ 1, 0, 0, 3]	],
-							[	[ 1, 0, 1, 0], [ 0, 0, 1, 1], [ 0, 0, 0, 2], [ 1, 0, 0, 3]	],
-							[	[ 0, 1, 1, 0], [ 0, 0, 1, 1], [ 0, 1, 0, 2], [ 0, 0, 0, 3]	]	])				
+def try_to_add_bond(atoms,ak,j,directions):
 	atom = copy.deepcopy(atoms[ak])
 	type = atom[0]
 	pos = atom[1]
@@ -73,19 +82,16 @@ def add_bond(atoms,new_bond):
 	return (ak, new_ak, adds_atom)
 
 def convert_atoms_to_xyz(atoms):
-	cell_size = 0.357
-	type_shifts = [	[0.00, 0.00, 0.00],[0.50, 0.50, 0.00],[0.50, 0.00, 0.50],[0.00, 0.50, 0.50],
-					[0.25, 0.25, 0.25],[0.75, 0.75, 0.25],[0.75, 0.25, 0.75],[0.25, 0.75, 0.75]	]			
 	lines = []
 	for ak in atoms.keys():
 		type = atoms[ak][0]
 		pos = atoms[ak][1]
-		x = pos[0]+type_shifts[type][0]
-		y = pos[1]+type_shifts[type][1]
-		z = pos[2]+type_shifts[type][2]
+		x = pos[0]+Type_shifts[type][0]
+		y = pos[1]+Type_shifts[type][1]
+		z = pos[2]+Type_shifts[type][2]
 		bonds_num = atoms[ak][3].count(True)
 		particle_type = Particles[bonds_num]
-		l = particle_type+'\t'+'%f\t'*3 % (x*cell_size,y*cell_size,z*cell_size)
+		l = particle_type+'\t'+'%f\t'*3 % (x*Cell_size,y*Cell_size,z*Cell_size)
 		lines.append(l)
 	return lines
 
@@ -124,20 +130,23 @@ def calculate_weights(possible_bonds,temperature,bond_energies):
 	bt = ['' for i in range(len(w))]
 	for i, pb in enumerate(possible_bonds):
 		v, bond_type = calculate_energy(pb,temperature,bond_energies)
-		if v>10**6:
+		if v>10**9:
 			w[i] = 0.
 		else:
 			w[i] = np.exp(-v)
 		bt[i] = bond_type
 	s = np.sum(w)
-	w = w/s
+	if s>1.e-21:
+		w = w/s
+	else:
+		w = None
 	return w, bt
 
 ########
 ########
 ########
 
-def generate_chain(outname, max_atom_num, temperature, bond_energies):
+def generate_chain(outname, max_atom_num, temperature, bond_energies, twoD=False):
 	initial_atom_type = 0
 	initial_atom_position = np.array([0,0,0])
 	atoms = {vec_to_str([0,0,0,0]) : [initial_atom_type, initial_atom_position, [False,False,False,False], [False,False,False,False]]}
@@ -146,26 +155,39 @@ def generate_chain(outname, max_atom_num, temperature, bond_energies):
 		genlog = open(outname+'_genlog.txt', 'w')
 	bonds_list = []
 	while len(atoms.keys())<max_atom_num:
+		print('Total atoms: '+str(len(atoms.keys())))
 		possible_bonds = []
 		for ak in atoms.keys():
 			for j in range(4):
 				if atoms[ak][3][j]==False:
-					new_bond = try_to_add_bond(atoms,ak,j)
-					possible_bonds.append(new_bond)
+					new_bond = try_to_add_bond(atoms,ak,j,Directions)
+					if twoD:
+						new_pos = new_bond[3][1]
+						type = new_bond[3][0]
+						new_pos = new_pos+Type_shifts[type]
+						dist = np.abs(np.sum(new_pos*Plane))
+						if dist<0.15:
+							possible_bonds.append(new_bond)
+					else:
+						possible_bonds.append(new_bond)
 		weights, bond_types = calculate_weights(possible_bonds, temperature, bond_energies)
-		bond_choice = choice(range(len(possible_bonds)), p=weights)
-		b = add_bond(atoms,possible_bonds[bond_choice])
-		bonds_list.append([possible_bonds[bond_choice][0],possible_bonds[bond_choice][2]])
 		if Print_genlog:
 			genlog.write(str(len(bonds_list))+'\n')
 			genlog.write(str(weights)+'\n')
 			genlog.write(str(bond_types)+'\n')
+		if weights is None:
+			print('No possible bonds.')
+			break
+		bond_choice = choice(range(len(possible_bonds)), p=weights)
+		b = add_bond(atoms,possible_bonds[bond_choice])
+		bonds_list.append([possible_bonds[bond_choice][0],possible_bonds[bond_choice][2]])
+		if Print_genlog:
 			genlog.write(str(b[0])+'\t'+str(b[1])+'\t'+str(b[2])+'\n')
 			genlog.write(str(bond_types[bond_choice])+'\t'+str(weights[bond_choice])+'\t'+str(1./len(weights))+'\n')
 			genlog.write('\n')
 	if Print_genlog:	
 		genlog.close()
-	
+	print('Total atoms: '+str(len(atoms.keys())))
 	fout = open(outname+'.xyz', 'w')
 	foutbonds = open(outname+'_bonds.txt', 'w')
 	output(atoms, bonds_list, fout, foutbonds)
